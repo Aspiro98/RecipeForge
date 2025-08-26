@@ -47,17 +47,26 @@ export class GroqService {
         messages: [
           {
             role: "system",
-            content: "You are an expert ATS (Applicant Tracking System) analyzer. Extract key information from job descriptions and provide keyword analysis. Respond with JSON in this exact format: { \"extractedKeywords\": [\"keyword1\", \"keyword2\"], \"requiredSkills\": [\"skill1\", \"skill2\"], \"atsScore\": 75 }"
+            content: "You are an expert ATS analyzer. You MUST respond ONLY with valid JSON. Do not include any text before or after the JSON. Use this exact format:\n{\n  \"extractedKeywords\": [\"keyword1\", \"keyword2\"],\n  \"requiredSkills\": [\"skill1\", \"skill2\"],\n  \"atsScore\": 75\n}"
           },
           {
             role: "user",
-            content: `Analyze this job description and extract:\n1. Important keywords that ATS systems look for\n2. Required skills and technologies\n3. Give an initial ATS score (0-100) based on keyword density\n\nJob Description:\n${jobDescription}`
+            content: `Analyze this job description and extract keywords, skills, and provide an ATS score (0-100). Respond with JSON only:\n\n${jobDescription}`
           }
         ],
         temperature: 0.1,
       });
 
-      const result = JSON.parse(response.choices[0].message.content || '{}');
+      const content = response.choices[0].message.content || '{}';
+      
+      // Try to extract JSON from the response if it's wrapped in text
+      let jsonContent = content.trim();
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonContent = jsonMatch[0];
+      }
+      
+      const result = JSON.parse(jsonContent);
       
       return {
         extractedKeywords: result.extractedKeywords || [],
@@ -79,17 +88,26 @@ export class GroqService {
         messages: [
           {
             role: "system",
-            content: "You are an expert resume optimization specialist. Optimize resumes to improve ATS scores while maintaining authenticity and professionalism. Focus on incorporating relevant keywords naturally and adding metrics where appropriate. Respond with JSON in this exact format: { \"optimizedContent\": \"optimized resume text\", \"improvements\": [{\"section\": \"section name\", \"before\": \"old text\", \"after\": \"new text\", \"reasoning\": \"explanation\"}], \"keywordMatches\": [\"keyword1\", \"keyword2\"], \"atsScore\": 85 }"
+            content: "You are an expert resume optimizer. You MUST respond ONLY with valid JSON. Do not include any text before or after the JSON. Use this exact format:\n{\n  \"optimizedContent\": \"optimized resume text\",\n  \"improvements\": [{\"section\": \"section name\", \"before\": \"old text\", \"after\": \"new text\", \"reasoning\": \"explanation\"}],\n  \"keywordMatches\": [\"keyword1\", \"keyword2\"],\n  \"atsScore\": 85\n}"
           },
           {
             role: "user",
-            content: `Optimize this resume for the given job description. Focus on:\n1. Incorporating missing keywords naturally\n2. Adding metrics and quantifiable achievements\n3. Improving ATS compatibility\n4. Maintaining authenticity\n\nOriginal Resume:\n${resumeContent}\n\nJob Description:\n${jobDescription}\n\nKey Keywords to Include: ${jobKeywords.join(', ')}`
+            content: `Optimize this resume for the job description. Include keywords: ${jobKeywords.join(', ')}. Respond with JSON only:\n\nResume:\n${resumeContent}\n\nJob:\n${jobDescription}`
           }
         ],
         temperature: 0.1,
       });
 
-      const result = JSON.parse(response.choices[0].message.content || '{}');
+      const content = response.choices[0].message.content || '{}';
+      
+      // Try to extract JSON from the response if it's wrapped in text
+      let jsonContent = content.trim();
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonContent = jsonMatch[0];
+      }
+      
+      const result = JSON.parse(jsonContent);
       
       return {
         optimizedContent: result.optimizedContent || resumeContent,
