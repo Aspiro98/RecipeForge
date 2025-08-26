@@ -1,0 +1,53 @@
+You are an expert full-stack web developer. Build me a modern, production-ready web application called "TailorMyResume" that helps students automatically tailor their resumes for job applications. The website should have the following features:
+
+CORE FEATURES (MVP):
+1. Resume Upload + Job Description Input:
+   - Allow users to upload their resume (PDF/DOCX).
+   - Allow users to paste a job description or job link.
+   - Parse both and show an ATS-style keyword match score.
+
+2. One-Click Auto-Tailoring:
+   - Use AI (OpenAI API) to rewrite resume bullet points and summaries so they naturally include missing keywords from the job description.
+   - Always keep resume professional, ATS-friendly, and metrics-oriented.
+   - Show before/after comparison of the tailored sections.
+
+3. Multi-Job Dashboard:
+   - Let users paste multiple job descriptions.
+   - Show which skills/keywords overlap most across all jobs.
+   - Suggest a “master tailored resume” for multiple applications.
+
+4. Version Control:
+   - Each tailored resume is saved as a new version.
+   - Allow users to compare two versions side by side (diff view).
+   - Store versions in a database.
+
+5. Cover Letter Generator:
+   - Auto-generate a tailored cover letter based on the job description and user’s resume.
+   - Use consistent tone and highlight relevant experience.
+
+6. Interview Prep:
+   - From the tailored resume + JD, generate a list of likely interview questions and sample strong answers.
+
+UI/UX REQUIREMENTS:
+- Use React + TailwindCSS for a clean, modern UI.
+- Minimalist design: dashboard with sections for “Upload Resume,” “Tailor Resume,” “Cover Letter,” “Interview Prep,” and “Saved Versions.”
+- Add progress indicators (e.g., tailoring in progress).
+- Use shadcn/ui components for cards, buttons, inputs.
+
+BACKEND:
+- Use Node.js (Express) with MongoDB (or PostgreSQL) for storing user data, resumes, and versions.
+- Integrate with OpenAI API for AI rewriting and tailoring.
+- Implement authentication (Google/GitHub OAuth) so users can log in and save progress.
+
+BONUS FEATURES (phase 2, not MVP):
+- Real ATS Simulation: show how ATS would parse resume text.
+- Community Feedback: anonymous peer reviews on resumes.
+- Job Application Tracker: dashboard to track applied jobs, stages, notes.
+
+DELIVERABLE:
+- Generate a clean project scaffold with React (frontend) + Node.js/Express (backend).
+- Include basic authentication, file upload handling, and one sample AI integration (resume tailoring).
+- Write clean, commented code with modular structure so it can be extended later.
+
+GOAL:
+I want an MVP where a student can upload a resume, paste a job description, and instantly get a tailored version with keyword matches, before/after view, and save it as a new version. Keep it lightweight and user-friendly.
