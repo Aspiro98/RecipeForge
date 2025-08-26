@@ -35,7 +35,7 @@ export default function Tailor() {
     if (jobDesc) setJobDescription(decodeURIComponent(jobDesc));
   }, []);
 
-  const { data: resumes = [] } = useQuery({
+  const { data: resumes = [] } = useQuery<any[]>({
     queryKey: ['/api/resumes'],
   });
 
@@ -112,13 +112,11 @@ export default function Tailor() {
 
     try {
       // First create the job description
-      const jobDescriptionResponse = await createJobDescriptionMutation.mutateAsync({
+      const jobDescriptionData = await createJobDescriptionMutation.mutateAsync({
         title: jobTitle || "Untitled Position",
         company,
         description: jobDescription,
       });
-
-      const jobDescriptionData = await jobDescriptionResponse.json();
 
       // Then tailor the resume
       await tailorResumeMutation.mutateAsync({
