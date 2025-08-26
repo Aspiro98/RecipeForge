@@ -43,10 +43,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         file.mimetype === 'application/pdf' ? 'pdf' : 'docx'
       );
 
+      // Ensure content is properly sanitized for database storage
+      const sanitizedContent = parsedResume.content.replace(/\x00/g, '').replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
+      
       const resumeData = insertResumeSchema.parse({
         userId,
         fileName: file.originalname,
-        originalContent: parsedResume.content,
+        originalContent: sanitizedContent,
         parsedContent: parsedResume.metadata,
         fileType: parsedResume.metadata.fileType,
         fileSize: file.size,

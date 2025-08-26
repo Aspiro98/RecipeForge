@@ -48,14 +48,17 @@ export class FileProcessor {
       // Clean up the uploaded file
       await fs.unlink(filePath);
 
+      // Sanitize the content before processing
+      const sanitizedContent = this.sanitizeText(content);
+      
       // Extract sections using simple text parsing
-      const sections = this.extractSections(content);
+      const sections = this.extractSections(sanitizedContent);
 
       return {
-        content,
+        content: sanitizedContent,
         metadata: {
           fileName,
-          fileSize: (await fs.stat(filePath).catch(() => ({ size: 0 }))).size,
+          fileSize: 0, // File size will be calculated differently since we delete the file
           fileType,
           sections,
         },
@@ -75,26 +78,35 @@ export class FileProcessor {
 
   private async parsePDF(filePath: string): Promise<string> {
     try {
-      // For production, you would use pdf-parse or similar library
-      // For now, we'll simulate the parsing
-      const fileContent = await fs.readFile(filePath, 'utf-8');
-      return fileContent;
+      const pdfBuffer = await fs.readFile(filePath);
+      const pdfParse = (await import('pdf-parse')).default;
+      const data = await pdfParse(pdfBuffer);
+      return this.sanitizeText(data.text);
     } catch (error) {
-      // If direct text reading fails, return a placeholder that indicates PDF parsing is needed
-      return 'PDF content extraction requires pdf-parse library. Please implement PDF parsing in production.';
+      console.error('Error parsing PDF:', error);
+      throw new Error('Failed to parse PDF file');
     }
   }
 
   private async parseDocx(filePath: string): Promise<string> {
     try {
-      // For production, you would use mammoth or similar library
-      // For now, we'll simulate the parsing
-      const fileContent = await fs.readFile(filePath, 'utf-8');
-      return fileContent;
+      const docxBuffer = await fs.readFile(filePath);
+      const mammoth = await import('mammoth');
+      const result = await mammoth.extractRawText({ buffer: docxBuffer });
+      return this.sanitizeText(result.value);
     } catch (error) {
-      // If direct text reading fails, return a placeholder that indicates DOCX parsing is needed
-      return 'DOCX content extraction requires mammoth library. Please implement DOCX parsing in production.';
+      console.error('Error parsing DOCX:', error);
+      throw new Error('Failed to parse DOCX file');
     }
+  }
+
+  private sanitizeText(text: string): string {
+    // Remove null bytes and other problematic characters that cause UTF-8 issues
+    return text
+      .replace(/\x00/g, '') // Remove null bytes
+      .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // Remove control characters
+      .replace(/\uFFFD/g, '') // Remove replacement characters
+      .trim();
   }
 
   private extractSections(content: string): {
