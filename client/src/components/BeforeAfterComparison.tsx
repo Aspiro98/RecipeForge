@@ -69,9 +69,11 @@ export default function BeforeAfterComparison({
             </div>
             <Card className="border border-border">
               <CardContent className="p-3">
-                <p className="text-sm text-foreground">
-                  {originalSample.substring(0, 150)}...
-                </p>
+                <div className="max-h-96 overflow-y-auto">
+                  <pre className="text-sm text-foreground whitespace-pre-wrap font-sans">
+                    {originalContent}
+                  </pre>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -86,12 +88,14 @@ export default function BeforeAfterComparison({
             </div>
             <Card className="border-2 border-primary">
               <CardContent className="p-3">
-                <div 
-                  className="text-sm text-foreground"
-                  dangerouslySetInnerHTML={{
-                    __html: highlightKeywords(tailoredSample.substring(0, 200) + "...")
-                  }}
-                />
+                <div className="max-h-96 overflow-y-auto">
+                  <div 
+                    className="text-sm text-foreground"
+                    dangerouslySetInnerHTML={{
+                      __html: highlightKeywords(tailoredContent)
+                    }}
+                  />
+                </div>
               </CardContent>
             </Card>
           </div>

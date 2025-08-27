@@ -19,12 +19,14 @@ import {
   type InsertInterviewQuestion,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 
 export interface IStorage {
-  // User operations (mandatory for Replit Auth)
+  // User operations
   getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+  createUser(user: UpsertUser): Promise<User>;
   
   // Resume operations
   createResume(resume: InsertResume): Promise<Resume>;
@@ -43,14 +45,17 @@ export interface IStorage {
   getResumeVersionsByUserId(userId: string): Promise<ResumeVersion[]>;
   getResumeVersionById(id: string): Promise<ResumeVersion | undefined>;
   updateResumeVersion(id: string, updates: Partial<ResumeVersion>): Promise<ResumeVersion>;
+  deleteResumeVersion(id: string): Promise<void>;
   
   // Cover letter operations
   createCoverLetter(coverLetter: InsertCoverLetter): Promise<CoverLetter>;
   getCoverLettersByVersionId(resumeVersionId: string): Promise<CoverLetter[]>;
+  getCoverLettersByUserId(userId: string): Promise<CoverLetter[]>;
   
   // Interview question operations
   createInterviewQuestions(questions: InsertInterviewQuestion[]): Promise<InterviewQuestion[]>;
   getInterviewQuestionsByVersionId(resumeVersionId: string): Promise<InterviewQuestion[]>;
+  getInterviewQuestionsByUserId(userId: string): Promise<InterviewQuestion[]>;
   
   // Statistics
   getUserStats(userId: string): Promise<{
@@ -68,6 +73,11 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
   async upsertUser(userData: UpsertUser): Promise<User> {
     const [user] = await db
       .insert(users)
@@ -80,6 +90,11 @@ export class DatabaseStorage implements IStorage {
         },
       })
       .returning();
+    return user;
+  }
+
+  async createUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db.insert(users).values(userData).returning();
     return user;
   }
 
@@ -161,6 +176,10 @@ export class DatabaseStorage implements IStorage {
     return updatedVersion;
   }
 
+  async deleteResumeVersion(id: string): Promise<void> {
+    await db.delete(resumeVersions).where(eq(resumeVersions.id, id));
+  }
+
   // Cover letter operations
   async createCoverLetter(coverLetter: InsertCoverLetter): Promise<CoverLetter> {
     const [newCoverLetter] = await db.insert(coverLetters).values(coverLetter).returning();
@@ -171,6 +190,23 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(coverLetters).where(eq(coverLetters.resumeVersionId, resumeVersionId)).orderBy(desc(coverLetters.createdAt));
   }
 
+  async getCoverLettersByUserId(userId: string): Promise<CoverLetter[]> {
+    // Get cover letters by joining with resume versions to find user's cover letters
+    const userResumeVersions = await db.select().from(resumeVersions)
+      .innerJoin(resumes, eq(resumeVersions.resumeId, resumes.id))
+      .where(eq(resumes.userId, userId));
+    
+    const versionIds = userResumeVersions.map(v => v.resume_versions.id);
+    
+    if (versionIds.length === 0) {
+      return [];
+    }
+    
+    return await db.select().from(coverLetters)
+      .where(inArray(coverLetters.resumeVersionId, versionIds))
+      .orderBy(desc(coverLetters.createdAt));
+  }
+
   // Interview question operations
   async createInterviewQuestions(questions: InsertInterviewQuestion[]): Promise<InterviewQuestion[]> {
     if (questions.length === 0) return [];
@@ -179,6 +215,23 @@ export class DatabaseStorage implements IStorage {
 
   async getInterviewQuestionsByVersionId(resumeVersionId: string): Promise<InterviewQuestion[]> {
     return await db.select().from(interviewQuestions).where(eq(interviewQuestions.resumeVersionId, resumeVersionId)).orderBy(desc(interviewQuestions.createdAt));
+  }
+
+  async getInterviewQuestionsByUserId(userId: string): Promise<InterviewQuestion[]> {
+    // Get interview questions by joining with resume versions to find user's questions
+    const userResumeVersions = await db.select().from(resumeVersions)
+      .innerJoin(resumes, eq(resumeVersions.resumeId, resumes.id))
+      .where(eq(resumes.userId, userId));
+    
+    const versionIds = userResumeVersions.map(v => v.resume_versions.id);
+    
+    if (versionIds.length === 0) {
+      return [];
+    }
+    
+    return await db.select().from(interviewQuestions)
+      .where(inArray(interviewQuestions.resumeVersionId, versionIds))
+      .orderBy(desc(interviewQuestions.createdAt));
   }
 
   // Statistics

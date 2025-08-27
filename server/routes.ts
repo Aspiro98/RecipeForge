@@ -1,9 +1,75 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated } from "./localAuth";
 import { groqService } from "./services/openai";
+import { documentGenerator } from "./services/documentGenerator";
 import { fileProcessor, upload } from "./services/fileProcessor";
+
+// Helper functions for extracting user information
+function extractUserName(content: string): string | undefined {
+  // Look for a name pattern at the beginning of the content
+  const lines = content.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.includes('SUMMARY') && !trimmed.includes('EXPERIENCE') && 
+        !trimmed.includes('PROJECTS') && !trimmed.includes('SKILLS') && 
+        !trimmed.includes('EDUCATION') && !trimmed.includes('CERTIFICATIONS') &&
+        !trimmed.includes('•') && !trimmed.includes('-')) {
+      // This might be the name line
+      return trimmed;
+    }
+  }
+  return undefined;
+}
+
+function extractContactInfo(content: string): string | undefined {
+  // Look for contact details after the name
+  const lines = content.split('\n');
+  let foundName = false;
+  let contactInfo: { phone?: string, email?: string, linkedin?: string, github?: string, location?: string } = {};
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (foundName && trimmed && !trimmed.includes('SUMMARY') && !trimmed.includes('EXPERIENCE') && 
+        !trimmed.includes('PROJECTS') && !trimmed.includes('SKILLS') && 
+        !trimmed.includes('EDUCATION') && !trimmed.includes('CERTIFICATIONS') &&
+        !trimmed.includes('•') && !trimmed.includes('-')) {
+      
+      // Extract email, phone, LinkedIn, GitHub, location
+      const emailMatch = trimmed.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      const phoneMatch = trimmed.match(/[\+]?[1-9][\d]{0,15}/);
+      const linkedinMatch = trimmed.match(/linkedin\.com\/in\/[a-zA-Z0-9-]+/i);
+      const githubMatch = trimmed.match(/github\.com\/[a-zA-Z0-9-]+/i);
+      const locationMatch = trimmed.match(/([A-Z][a-z]+(?:[\s,]+[A-Z][a-z]+)*)/);
+      
+      if (emailMatch) contactInfo.email = emailMatch[0];
+      if (phoneMatch) contactInfo.phone = phoneMatch[0];
+      if (linkedinMatch) contactInfo.linkedin = `linkedin.com/in/${linkedinMatch[0].split('/').pop()}`;
+      if (githubMatch) contactInfo.github = `github.com/${githubMatch[0].split('/').pop()}`;
+      if (locationMatch && !contactInfo.email && !contactInfo.phone && !contactInfo.linkedin && !contactInfo.github) {
+        contactInfo.location = locationMatch[0];
+      }
+    }
+    
+    if (trimmed && !trimmed.includes('SUMMARY') && !trimmed.includes('EXPERIENCE') && 
+        !trimmed.includes('PROJECTS') && !trimmed.includes('SKILLS') && 
+        !trimmed.includes('EDUCATION') && !trimmed.includes('CERTIFICATIONS') &&
+        !trimmed.includes('•') && !trimmed.includes('-')) {
+      foundName = true;
+    }
+  }
+  
+  // Build contact line with actual content
+  const contactParts = [];
+  if (contactInfo.phone) contactParts.push(contactInfo.phone);
+  if (contactInfo.email) contactParts.push(contactInfo.email);
+  if (contactInfo.linkedin) contactParts.push(contactInfo.linkedin);
+  if (contactInfo.github) contactParts.push(contactInfo.github);
+  if (contactInfo.location) contactParts.push(contactInfo.location);
+  
+  return contactParts.length > 0 ? contactParts.join(' | ') : undefined;
+}
 import {
   insertResumeSchema,
   insertJobDescriptionSchema,
@@ -14,18 +80,6 @@ import {
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
-
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
 
   // Resume routes
   app.post('/api/resumes/upload', isAuthenticated, upload.single('resume'), async (req: any, res) => {
@@ -96,8 +150,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
       });
 
+      // Get scoring method from request body or default to jobscan
+      const scoringMethod = req.body.scoringMethod || 'jobscan';
+      
       // Analyze job description with AI
-      const analysis = await groqService.analyzeJobDescription(jobDescriptionData.description);
+      const analysis = await groqService.analyzeJobDescription(jobDescriptionData.description, scoringMethod);
       
       jobDescriptionData.extractedKeywords = analysis.extractedKeywords;
       jobDescriptionData.requiredSkills = analysis.requiredSkills;
@@ -126,9 +183,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { resumeId } = req.params;
       const { jobDescriptionId, versionName } = req.body;
+      
+      console.log('Tailor request:', { resumeId, jobDescriptionId, userId: req.user?.claims?.sub });
 
       const resume = await storage.getResumeById(resumeId);
       const jobDescription = await storage.getJobDescriptionById(jobDescriptionId);
+      
+      console.log('Found resume:', !!resume, 'Found job description:', !!jobDescription);
 
       if (!resume || !jobDescription) {
         return res.status(404).json({ message: "Resume or job description not found" });
@@ -137,11 +198,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get job keywords
       const jobKeywords = jobDescription.extractedKeywords as string[] || [];
 
+      // Get scoring method from request body or default to jobscan
+      const scoringMethod = req.body.scoringMethod || 'jobscan';
+      
       // Optimize resume using AI
       const optimization = await groqService.optimizeResumeForJob(
         resume.originalContent,
         jobDescription.description,
-        jobKeywords
+        jobKeywords,
+        scoringMethod
       );
 
       const versionData = insertResumeVersionSchema.parse({
@@ -198,6 +263,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete resume version endpoint
+  app.delete('/api/resume-versions/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.claims.sub;
+
+      const version = await storage.getResumeVersionById(id);
+      if (!version) {
+        return res.status(404).json({ message: "Resume version not found" });
+      }
+
+      // Check if user owns the resume that this version belongs to
+      const resume = await storage.getResumeById(version.resumeId);
+      if (!resume || resume.userId !== userId) {
+        return res.status(404).json({ message: "Resume version not found" });
+      }
+
+      await storage.deleteResumeVersion(id);
+      res.json({ message: "Resume version deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting resume version:", error);
+      res.status(500).json({ message: "Failed to delete resume version" });
+    }
+  });
+
   // Cover letter routes
   app.post('/api/resume-versions/:versionId/cover-letter', isAuthenticated, async (req: any, res) => {
     try {
@@ -228,6 +318,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error generating cover letter:", error);
       res.status(500).json({ message: "Failed to generate cover letter" });
+    }
+  });
+
+  // Get all cover letters for user (must come before specific version routes)
+  app.get('/api/cover-letters', isAuthenticated, async (req: any, res) => {
+    try {
+      const coverLetters = await storage.getCoverLettersByUserId(req.user.claims.sub);
+      res.json(coverLetters);
+    } catch (error) {
+      console.error("Error fetching cover letters:", error);
+      res.status(500).json({ message: "Failed to fetch cover letters" });
     }
   });
 
@@ -275,6 +376,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get all interview questions for user (must come before specific version routes)
+  app.get('/api/interview-questions', isAuthenticated, async (req: any, res) => {
+    try {
+      const questions = await storage.getInterviewQuestionsByUserId(req.user.claims.sub);
+      res.json(questions);
+    } catch (error) {
+      console.error("Error fetching interview questions:", error);
+      res.status(500).json({ message: "Failed to fetch interview questions" });
+    }
+  });
+
   app.get('/api/resume-versions/:versionId/interview-questions', isAuthenticated, async (req: any, res) => {
     try {
       const { versionId } = req.params;
@@ -314,6 +426,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error analyzing multiple jobs:", error);
       res.status(500).json({ message: "Failed to analyze multiple jobs" });
+    }
+  });
+
+  // Word document download route
+  app.get('/api/resume-versions/:versionId/download-word', isAuthenticated, async (req: any, res) => {
+    try {
+      const { versionId } = req.params;
+      const userId = req.user.claims.sub;
+
+      const version = await storage.getResumeVersionById(versionId);
+      if (!version) {
+        return res.status(404).json({ message: "Resume version not found" });
+      }
+
+      // Check if user owns the resume that this version belongs to
+      const resume = await storage.getResumeById(version.resumeId);
+      if (!resume || resume.userId !== userId) {
+        return res.status(404).json({ message: "Resume version not found" });
+      }
+
+      // Get job description for keywords
+      const jobDescription = await storage.getJobDescriptionById(version.jobDescriptionId);
+      const keywords = jobDescription?.extractedKeywords as string[] || [];
+
+      // Parse resume content into sections using enhanced parsing
+      const sections = documentGenerator.parseResumeContentEnhanced(version.tailoredContent);
+
+      // Get the original resume to extract user information
+      const originalResume = await storage.getResumeById(version.resumeId);
+      
+      // Extract user information from the original resume content
+      const userName = extractUserName(originalResume?.originalContent || '');
+      const contactInfo = extractContactInfo(originalResume?.originalContent || '');
+
+      // Generate Word document
+      const docBuffer = await documentGenerator.generateATSResume({
+        fileName: `${version.versionName || 'Tailored Resume'}.docx`,
+        sections,
+        userName,
+        userDetails: contactInfo,
+        includeATSKeywords: false,
+        keywords,
+      });
+
+      // Set response headers for file download
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${version.versionName || 'Tailored Resume'}.docx"`);
+      res.setHeader('Content-Length', docBuffer.length);
+
+      res.send(docBuffer);
+    } catch (error) {
+      console.error("Error generating Word document:", error);
+      res.status(500).json({ message: "Failed to generate Word document" });
     }
   });
 

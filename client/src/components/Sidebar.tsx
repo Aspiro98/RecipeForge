@@ -68,8 +68,22 @@ export default function Sidebar({ className }: SidebarProps) {
     },
   ];
 
-  const handleLogout = () => {
-    window.location.href = "/api/logout";
+  const handleLogout = async () => {
+    try {
+      const response = await fetch('/api/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        // Redirect to landing page after successful logout
+        window.location.href = '/';
+      }
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Still redirect to landing page even if logout fails
+      window.location.href = '/';
+    }
   };
 
   const getUserInitials = () => {

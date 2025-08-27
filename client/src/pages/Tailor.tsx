@@ -15,6 +15,7 @@ import Sidebar from "@/components/Sidebar";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import KeywordAnalysis from "@/components/KeywordAnalysis";
 import BeforeAfterComparison from "@/components/BeforeAfterComparison";
+import { FileText } from "lucide-react";
 
 export default function Tailor() {
   const { toast } = useToast();
@@ -23,6 +24,7 @@ export default function Tailor() {
   const [jobTitle, setJobTitle] = useState("");
   const [company, setCompany] = useState("");
   const [versionName, setVersionName] = useState("");
+  const [scoringMethod, setScoringMethod] = useState<'jobscan' | 'resumeworded'>('jobscan');
   const [tailoredVersion, setTailoredVersion] = useState<any>(null);
 
   // Get URL params
@@ -42,7 +44,11 @@ export default function Tailor() {
   // Create job description mutation
   const createJobDescriptionMutation = useMutation({
     mutationFn: async (jobData: any) => {
-      return await apiRequest('POST', '/api/job-descriptions', jobData);
+      const response = await apiRequest('POST', '/api/job-descriptions', {
+        ...jobData,
+        scoringMethod,
+      });
+      return await response.json();
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -67,10 +73,12 @@ export default function Tailor() {
   // Tailor resume mutation
   const tailorResumeMutation = useMutation({
     mutationFn: async ({ resumeId, jobDescriptionId, versionName }: any) => {
-      return await apiRequest('POST', `/api/resumes/${resumeId}/tailor`, {
+      const response = await apiRequest('POST', `/api/resumes/${resumeId}/tailor`, {
         jobDescriptionId,
         versionName,
+        scoringMethod,
       });
+      return await response.json();
     },
     onSuccess: (data) => {
       setTailoredVersion(data);
@@ -118,6 +126,8 @@ export default function Tailor() {
         description: jobDescription,
       });
 
+      console.log('Job description created:', jobDescriptionData);
+
       // Then tailor the resume
       await tailorResumeMutation.mutateAsync({
         resumeId: selectedResumeId,
@@ -126,6 +136,39 @@ export default function Tailor() {
       });
     } catch (error) {
       console.error('Error in tailoring process:', error);
+    }
+  };
+
+  const handleDownloadWord = async (version: any) => {
+    try {
+      const response = await fetch(`/api/resume-versions/${version.id}/download-word`, {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download Word document');
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${version.versionName || 'Tailored Resume'}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Downloaded",
+        description: "ATS-friendly Word document downloaded successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to download Word document",
+        variant: "destructive",
+      });
     }
   };
 
@@ -220,6 +263,26 @@ export default function Tailor() {
                     data-testid="input-version-name"
                   />
                 </div>
+
+                <div>
+                  <Label htmlFor="scoring-method">ATS Scoring Method</Label>
+                  <select
+                    id="scoring-method"
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground"
+                    value={scoringMethod}
+                    onChange={(e) => setScoringMethod(e.target.value as 'jobscan' | 'resumeworded')}
+                    data-testid="select-scoring-method"
+                  >
+                    <option value="jobscan">Jobscan-style (Keyword-focused)</option>
+                    <option value="resumeworded">Resumeworded-style (Writing quality + Keywords)</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {scoringMethod === 'jobscan' 
+                      ? 'Focuses on keyword matching, section placement, and ATS optimization'
+                      : 'Evaluates writing style, bullet length, action verbs, and overall presentation'
+                    }
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -260,9 +323,20 @@ export default function Tailor() {
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-foreground">Tailoring Results</h3>
-                  <Badge variant="outline" className="bg-chart-1/10 text-chart-1 border-chart-1/20">
-                    Processing Complete
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleDownloadWord(tailoredVersion)}
+                      className="bg-chart-1/10 text-chart-1 border-chart-1/20 hover:bg-chart-1/20"
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      Download Word
+                    </Button>
+                    <Badge variant="outline" className="bg-chart-1/10 text-chart-1 border-chart-1/20">
+                      Processing Complete
+                    </Badge>
+                  </div>
                 </div>
 
                 <KeywordAnalysis 
